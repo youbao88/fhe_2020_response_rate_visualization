@@ -33,6 +33,7 @@ fig = px.choropleth_map(
 )
 
 app = dash.Dash(__name__)
+app.title = "FHE 2021 response rate"
 
 app.layout = html.Div([
     html.H1("Response rate on folkhälsoenkät 2021", style={'textAlign': 'center'}),
