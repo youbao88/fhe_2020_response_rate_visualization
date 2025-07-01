@@ -60,7 +60,8 @@ def get_figure():
             [0.5, "white"],
             [1.0, "blue"]
         ],
-        color_continuous_midpoint=35
+        color_continuous_midpoint=35,
+        range_color=[20, 67]
     )
     return fig, df
 
