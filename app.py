@@ -4,46 +4,78 @@ import pandas as pd
 import plotly.express as px
 import dash
 from dash import dcc, html, dash_table
-
-# Read the GeoJSON file
-with open(os.path.join("Data", "stockholm_kommundel_response_date.geojson"), encoding="utf-8") as f:
-    geojson = json.load(f)
-
-# Convert GeoJSON to DataFrame
-properties = [feature["properties"] for feature in geojson["features"]]
-df = pd.DataFrame(properties)
-
-fig = px.choropleth_map(
-    df,
-    geojson=geojson,
-    locations="omr_namn",         # column in df
-    color=r"% deltagande",              # column in df
-    featureidkey="properties.omr_namn",  # key in GeoJSON properties
-    map_style="basic",
-    zoom=7,
-    center={"lat": 59.3293, "lon": 18.0686},  # Example: Stockholm center
-    opacity=0.5,
-    hover_name="omr_namn",                # Optional
-    hover_data={
-        "omr_namn": False,        # hide this
-        "% deltagande": True,      # hide this
-        "sdk_text": True
-    },
-    color_continuous_scale=px.colors.sequential.Reds,
-)
+from flask_caching import Cache
 
 app = dash.Dash(__name__)
 app.title = "FHE 2021 response rate"
 
+# Set up Flask-Caching
+cache = Cache(app.server, config={
+    'CACHE_TYPE': 'filesystem',
+    'CACHE_DIR': 'cache-directory',
+    'CACHE_THRESHOLD': 10
+})
+
+@cache.memoize(timeout=3600)
+def load_geojson():
+    with open(os.path.join("Data", "stockholm_kommundel_response_date.geojson"), encoding="utf-8") as f:
+        geojson = json.load(f)
+    return geojson
+
+@cache.memoize(timeout=3600)
+def get_dataframe():
+    geojson = load_geojson()
+    # Only keep necessary columns
+    properties = [
+        {
+            "omr_namn": feat["properties"]["omr_namn"],
+            "% deltagande": feat["properties"]["% deltagande"],
+            "sdk_text": feat["properties"].get("sdk_text", "")
+        }
+        for feat in geojson["features"]
+    ]
+    return pd.DataFrame(properties), geojson
+
+@cache.memoize(timeout=3600)
+def get_figure():
+    df, geojson = get_dataframe()
+    fig = px.choropleth_map(
+        df,
+        geojson=geojson,
+        locations="omr_namn",
+        color=r"% deltagande",
+        featureidkey="properties.omr_namn",
+        map_style="basic",
+        zoom=7,
+        center={"lat": 59.3293, "lon": 18.0686},
+        opacity=0.5,
+        hover_name="omr_namn",
+        hover_data={
+            "omr_namn": False,
+            "% deltagande": True,
+            "sdk_text": True
+        },
+        color_continuous_scale=[
+            [0.0, "red"],
+            [0.5, "white"],
+            [1.0, "blue"]
+        ],
+        color_continuous_midpoint=35
+    )
+    return fig, df
+
+fig, df = get_figure()
+
 app.layout = html.Div([
-    html.H1("Response rate on folkhälsoenkät 2021", style={'textAlign': 'center'}),
+    html.H1("Response rate on folkhälsoenkät 2021",
+            style={'textAlign': 'center'}),
 
     html.Div(
         style={
             'display': 'flex',
             'flexDirection': 'row',
             'gap': '20px',
-            'height': '90vh',          # Almost full viewport height minus header
+            'height': '90vh',
             'padding': '5px'
         },
         children=[
@@ -55,11 +87,11 @@ app.layout = html.Div([
                     style={'height': '100%', 'margin': '0', 'padding': '0'}
                 ),
                 style={
-                    'flex': '1',
+                    'flex': '1',  # Changed from '1' to '2' for wider map
                     'height': '100%',
                     'minWidth': '0',
-                    'margin': '0',       # remove margin here
-                    'padding': '0'  # Important to allow flex children to shrink properly
+                    'margin': '0',
+                    'padding': '0'
                 }
             ),
 
@@ -68,7 +100,8 @@ app.layout = html.Div([
                     columns=[{"name": c, "id": c} for c in df.columns],
                     data=df.to_dict("records"),
                     sort_action="native",
-                    page_size=20,
+                    filter_action='native',
+                    page_size=20,  
                     style_table={
                         'height': '100%',
                         'overflowY': 'auto',
@@ -78,7 +111,7 @@ app.layout = html.Div([
                                 'whiteSpace': 'normal', 'height': 'auto'}
                 ),
                 style={
-                    'flex': '1',
+                    'flex': '1',  
                     'height': '100%',
                     'minWidth': '0'
                 }
@@ -88,4 +121,4 @@ app.layout = html.Div([
 ])
 
 if __name__ == "__main__":
-    app.run(debug=False)
+    app.run(debug=True)
